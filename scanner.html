@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Event Check-In Scanner</title>
+  <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, Arial, sans-serif;
+      margin: 0; padding: 16px;
+      background: #f4f4f4;
+    }
+    h1 { font-size: 20px; text-align: center; margin-bottom: 4px; }
+    .event-label { text-align: center; color: #555; margin-bottom: 16px; font-size: 14px; }
+    select, input[type=text] {
+      width: 100%; padding: 12px; font-size: 16px; margin-bottom: 12px;
+      border: 1px solid #ccc; border-radius: 8px;
+    }
+    button {
+      width: 100%; padding: 16px; font-size: 18px; border: none;
+      border-radius: 8px; margin-bottom: 10px; cursor: pointer; font-weight: bold;
+    }
+    .btn-primary { background: #2b6cb0; color: white; }
+    .btn-secondary { background: #ddd; color: #333; }
+    #reader { width: 100%; margin-bottom: 12px; border-radius: 8px; overflow: hidden; min-height: 0; }
+    .reader-placeholder { text-align: center; color: #999; padding: 0; margin: 0 0 4px 0; font-size: 13px; }
+    .result-banner {
+      padding: 30px 16px; border-radius: 12px; text-align: center;
+      font-size: 24px; font-weight: bold; color: white; margin-bottom: 16px;
+      display: none;
+    }
+    .result-success { background: #2f855a; }
+    .result-fail { background: #c53030; }
+    .sub-name { font-size: 16px; font-weight: normal; margin-top: 6px; }
+    .hidden { display: none; }
+    .lookup-item {
+      padding: 12px; background: white; border-radius: 8px; margin-bottom: 6px;
+      border: 1px solid #ddd; cursor: pointer;
+    }
+    .screen { max-width: 480px; margin: 0 auto; }
+    .config-warning {
+      background: #fdecea; border: 1px solid #f5c6cb; color: #611a15;
+      padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+<div class="screen">
+
+  <div id="configWarning" class="config-warning hidden">
+    Setup needed: open this file and set <code>APPS_SCRIPT_URL</code> at the
+    top of the script to your deployed Apps Script web app URL.
+  </div>
+
+  <div id="setupScreen">
+    <h1>Event Check-In Setup</h1>
+    <p style="text-align:center;color:#777;">Choose tonight's event to begin</p>
+    <select id="eventSelect"></select>
+    <button class="btn-primary" onclick="startEvent()">Start Event</button>
+  </div>
+
+  <div id="scanScreen" class="hidden">
+    <h1>Check-In</h1>
+    <div class="event-label" id="currentEventLabel"></div>
+
+    <div id="resultBanner" class="result-banner"></div>
+
+    <div id="reader"></div>
+    <button class="btn-primary" id="scanBtn" onclick="toggleScanner()">Tap to Scan</button>
+
+    <button class="btn-secondary" onclick="toggleLookup()">Look Up by Name Instead</button>
+    <div id="lookupBox" class="hidden">
+      <input type="text" id="nameInput" placeholder="Type member name..." oninput="handleSearch()">
+      <div id="lookupResults"></div>
+    </div>
+
+    <button class="btn-secondary" onclick="toggleManualEntry()">Enter ID Manually</button>
+    <div id="manualBox" class="hidden">
+      <input type="text" id="manualIdInput" placeholder="Member ID (e.g. M0001)" onkeydown="if(event.key==='Enter') submitManualId()">
+      <button class="btn-primary" onclick="submitManualId()">Check In</button>
+    </div>
+
+    <button class="btn-secondary" id="syncBtn" onclick="checkForNewPurchases()">Check for New Purchases</button>
+
+    <button class="btn-secondary" onclick="switchEvent()">Switch Event</button>
+  </div>
+
+</div>
+
+<script>
+  // ================= CONFIG =================
+  // Paste your deployed Apps Script web app URL here (Deploy > Manage
+  // deployments in the Apps Script editor). It looks like:
+  // https://script.google.com/macros/s/AKfycb.../exec
+  const APPS_SCRIPT_URL = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+  // ============================================
+
+  let currentEventId = null;
+  let currentEventLabel = null;
+  let scanner = null;
+  let isScanning = false;
+  let canScan = true;
+
+  window.onload = function() {
+    if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.indexOf('PASTE_YOUR') !== -1) {
+      document.getElementById('configWarning').classList.remove('hidden');
+      return;
+    }
+    loadEvents();
+  };
+
+  // Talks to the Apps Script backend. Uses text/plain as the content type
+  // so the browser treats this as a "simple request" and skips the CORS
+  // preflight check that Apps Script doesn't handle well.
+  function callBackend(payload) {
+    return fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    }).then(r => r.json());
+  }
+
+  function loadEvents() {
+    callBackend({ action: 'events' })
+      .then(res => populateEvents(res.events || []))
+      .catch(err => alert('Could not load events: ' + err));
+  }
+
+  function populateEvents(options) {
+    const select = document.getElementById('eventSelect');
+    select.innerHTML = '';
+    if (options.length === 0) {
+      select.innerHTML = '<option>No events found in the last 3 months</option>';
+      return;
+    }
+    options.forEach(opt => {
+      const el = document.createElement('option');
+      el.value = opt.id + '||' + opt.label;
+      el.textContent = opt.label;
+      select.appendChild(el);
+    });
+  }
+
+  function startEvent() {
+    const select = document.getElementById('eventSelect');
+    const [id, label] = select.value.split('||');
+    currentEventId = id;
+    currentEventLabel = label;
+    document.getElementById('currentEventLabel').textContent = label;
+    document.getElementById('setupScreen').classList.add('hidden');
+    document.getElementById('scanScreen').classList.remove('hidden');
+    document.getElementById('reader').innerHTML = '<p class="reader-placeholder">Camera is off - tap "Tap to Scan" below</p>';
+  }
+
+  function switchEvent() {
+    stopScanner();
+    document.getElementById('scanScreen').classList.add('hidden');
+    document.getElementById('setupScreen').classList.remove('hidden');
+  }
+
+  function toggleScanner() {
+    if (isScanning) {
+      stopScanner();
+    } else {
+      startScanner();
+    }
+  }
+
+  function startScanner() {
+    document.getElementById('reader').innerHTML = '';
+    scanner = new Html5Qrcode('reader');
+    scanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: 220 },
+      onScanSuccess
+    ).then(() => {
+      isScanning = true;
+      document.getElementById('scanBtn').textContent = 'Stop Scanning';
+    }).catch(err => {
+      alert('Could not start camera: ' + err);
+    });
+  }
+
+  function stopScanner() {
+    if (scanner && isScanning) {
+      scanner.stop().then(() => {
+        scanner.clear();
+        finishStoppingScanner();
+      }).catch(() => {
+        finishStoppingScanner();
+      });
+    }
+  }
+
+  function finishStoppingScanner() {
+    isScanning = false;
+    document.getElementById('scanBtn').textContent = 'Tap to Scan';
+    document.getElementById('reader').innerHTML = '<p class="reader-placeholder">Camera is off - tap "Tap to Scan" below</p>';
+  }
+
+  function onScanSuccess(decodedText) {
+    if (!canScan) return;
+    canScan = false;
+    stopScanner(); // camera only runs while actively scanning
+    doCheckIn(decodedText.trim());
+  }
+
+  function doCheckIn(memberId) {
+    callBackend({
+      action: 'checkin',
+      memberId: memberId,
+      eventId: currentEventId,
+      eventLabel: currentEventLabel
+    })
+      .then(showResult)
+      .catch(err => {
+        alert('Error: ' + err);
+        canScan = true;
+      });
+  }
+
+  function showResult(res) {
+    const banner = document.getElementById('resultBanner');
+    banner.style.display = 'block';
+    if (res.status === 'success') {
+      banner.className = 'result-banner result-success';
+      banner.innerHTML = '&#10003; CHECKED IN' + (res.memberName ? '<div class="sub-name">' + res.memberName + '</div>' : '');
+    } else {
+      banner.className = 'result-banner result-fail';
+      banner.innerHTML = '&#10007; ' + (res.message || 'Error').toUpperCase() + (res.memberName ? '<div class="sub-name">' + res.memberName + '</div>' : '');
+    }
+    setTimeout(() => {
+      banner.style.display = 'none';
+      canScan = true;
+    }, 2500);
+  }
+
+  function toggleLookup() {
+    document.getElementById('lookupBox').classList.toggle('hidden');
+  }
+
+  function toggleManualEntry() {
+    document.getElementById('manualBox').classList.toggle('hidden');
+  }
+
+  function submitManualId() {
+    const input = document.getElementById('manualIdInput');
+    const id = input.value.trim();
+    if (!id) return;
+    input.value = '';
+    doCheckIn(id);
+  }
+
+  function checkForNewPurchases() {
+    const btn = document.getElementById('syncBtn');
+    btn.disabled = true;
+    btn.textContent = 'Checking...';
+    callBackend({ action: 'syncPurchases' })
+      .then(res => {
+        btn.disabled = false;
+        btn.textContent = 'Check for New Purchases';
+        showSyncToast(res);
+      })
+      .catch(err => {
+        btn.disabled = false;
+        btn.textContent = 'Check for New Purchases';
+        alert('Error checking for purchases: ' + err);
+      });
+  }
+
+  function showSyncToast(res) {
+    if (!res.success) {
+      alert(res.message || 'Could not check for new purchases.');
+      return;
+    }
+    if (res.newCount === 0) {
+      alert('No new purchases found.');
+      return;
+    }
+    let msg = res.newCount === 1 ? '1 new membership added:\n' : res.newCount + ' new memberships added:\n';
+    msg += res.newMembers.map(m => m.name + ' (' + m.memberId + ')').join('\n');
+    if (res.outOfIds) {
+      msg += '\n\nWarning: ran out of unassigned IDs for at least one purchase.';
+    }
+    alert(msg);
+  }
+
+  let searchTimeout;
+  function handleSearch() {
+    clearTimeout(searchTimeout);
+    const query = document.getElementById('nameInput').value;
+    searchTimeout = setTimeout(() => {
+      callBackend({ action: 'search', query: query })
+        .then(res => showLookupResults(res.results || []))
+        .catch(err => console.error(err));
+    }, 300);
+  }
+
+  function showLookupResults(results) {
+    const container = document.getElementById('lookupResults');
+    container.innerHTML = '';
+    results.forEach(r => {
+      const div = document.createElement('div');
+      div.className = 'lookup-item';
+      div.textContent = r.name;
+      div.onclick = function() {
+        document.getElementById('nameInput').value = '';
+        container.innerHTML = '';
+        doCheckIn(r.id);
+      };
+      container.appendChild(div);
+    });
+  }
+</script>
+</body>
+</html>
