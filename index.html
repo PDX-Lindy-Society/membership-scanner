@@ -33,6 +33,7 @@
     }
     .result-success { background: #2f855a; }
     .result-fail { background: #c53030; }
+    .result-checking { background: #4a5568; }
     .sub-name { font-size: 16px; font-weight: normal; margin-top: 6px; }
     .hidden { display: none; }
     .lookup-item {
@@ -57,7 +58,7 @@
   <div id="setupScreen">
     <h1>Event Check-In Setup</h1>
     <p style="text-align:center;color:#777;">Choose tonight's event to begin</p>
-    <select id="eventSelect"></select>
+    <select id="eventSelect"><option>Loading events...</option></select>
     <p id="noEventsMsg" class="hidden" style="text-align:center;color:#c53030;font-size:13px;margin-top:-6px;">No upcoming events found — add one to the Events tab first.</p>
     <button class="btn-primary" id="startEventBtn" onclick="startEvent()" disabled>Start Event</button>
   </div>
@@ -95,7 +96,7 @@
   // Paste your deployed Apps Script web app URL here (Deploy > Manage
   // deployments in the Apps Script editor). It looks like:
   // https://script.google.com/macros/s/AKfycb.../exec
-  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx2uY5WP5KfS7gQXI-M1q06ccm65UYzL1kwseI1cYCKgggDG892w8Hewtuy0Pn8eJ6w/exec';
+  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbye_VnJE5OOFXvQAbv87WeRwnTqiGmHe7k89GoIsfSlioev0joIwY9n25YJuy4XOChf/exec';
   // ============================================
 
   let currentEventId = null;
@@ -220,6 +221,7 @@
   }
 
   function doCheckIn(memberId) {
+    showChecking();
     callBackend({
       action: 'checkin',
       memberId: memberId,
@@ -231,6 +233,13 @@
         alert('Error: ' + err);
         canScan = true;
       });
+  }
+
+  function showChecking() {
+    const banner = document.getElementById('resultBanner');
+    banner.style.display = 'block';
+    banner.className = 'result-banner result-checking';
+    banner.innerHTML = 'Checking...';
   }
 
   function showResult(res) {
