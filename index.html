@@ -58,7 +58,8 @@
     <h1>Event Check-In Setup</h1>
     <p style="text-align:center;color:#777;">Choose tonight's event to begin</p>
     <select id="eventSelect"></select>
-    <button class="btn-primary" onclick="startEvent()">Start Event</button>
+    <p id="noEventsMsg" class="hidden" style="text-align:center;color:#c53030;font-size:13px;margin-top:-6px;">No upcoming events found — add one to the Events tab first.</p>
+    <button class="btn-primary" id="startEventBtn" onclick="startEvent()" disabled>Start Event</button>
   </div>
 
   <div id="scanScreen" class="hidden">
@@ -130,22 +131,33 @@
 
   function populateEvents(options) {
     const select = document.getElementById('eventSelect');
+    const startBtn = document.getElementById('startEventBtn');
+    const noEventsMsg = document.getElementById('noEventsMsg');
     select.innerHTML = '';
     if (options.length === 0) {
-      select.innerHTML = '<option>No events found in the last 3 months</option>';
+      select.innerHTML = '<option value="">No upcoming events found</option>';
+      startBtn.disabled = true;
+      noEventsMsg.classList.remove('hidden');
       return;
     }
+    noEventsMsg.classList.add('hidden');
     options.forEach(opt => {
       const el = document.createElement('option');
       el.value = opt.id + '||' + opt.label;
       el.textContent = opt.label;
       select.appendChild(el);
     });
+    startBtn.disabled = false;
   }
 
   function startEvent() {
     const select = document.getElementById('eventSelect');
-    const [id, label] = select.value.split('||');
+    const parts = select.value.split('||');
+    if (parts.length < 2 || !parts[0]) {
+      alert('Please add an event to the Events tab first.');
+      return;
+    }
+    const [id, label] = parts;
     currentEventId = id;
     currentEventLabel = label;
     document.getElementById('currentEventLabel').textContent = label;
