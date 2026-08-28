@@ -96,7 +96,7 @@
   // Paste your deployed Apps Script web app URL here (Deploy > Manage
   // deployments in the Apps Script editor). It looks like:
   // https://script.google.com/macros/s/AKfycb.../exec
-  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbye_VnJE5OOFXvQAbv87WeRwnTqiGmHe7k89GoIsfSlioev0joIwY9n25YJuy4XOChf/exec';
+  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw4Ea9F7VS-xVToYuWF5jHuXBjslRUBtf8vtUAFcM_42xxP4zOqjiVKhKpkMrpGYdx2/exec';
   // ============================================
 
   let currentEventId = null;
@@ -300,12 +300,7 @@
       alert('No new purchases found.');
       return;
     }
-    let msg = res.newCount === 1 ? '1 new membership added:\n' : res.newCount + ' new memberships added:\n';
-    msg += res.newMembers.map(m => m.name + ' (' + m.memberId + ')').join('\n');
-    if (res.outOfIds) {
-      msg += '\n\nWarning: ran out of unassigned IDs for at least one purchase.';
-    }
-    alert(msg);
+    alert(res.newCount + ' membership purchase(s) processed.\n\nIf anything needed manual attention (unrecognized ID, ambiguous name, out of IDs), check your email.');
   }
 
   let searchTimeout;
