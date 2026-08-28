@@ -121,7 +121,17 @@
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(payload)
-    }).then(r => r.json());
+    }).then(r => r.text()).then(text => {
+      try {
+        return JSON.parse(text);
+      } catch (e) {
+        // Not valid JSON - show what actually came back instead of just
+        // failing silently, so we can tell what's really happening
+        // (a Google error page, a wifi captive portal login screen, etc.)
+        console.error('Non-JSON response from backend:', text);
+        throw new Error('Server returned something unexpected. First 300 characters: ' + text.slice(0, 300));
+      }
+    });
   }
 
   function loadEvents() {
