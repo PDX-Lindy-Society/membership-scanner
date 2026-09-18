@@ -13,7 +13,8 @@
       background: #f4f4f4;
     }
     h1 { font-size: 20px; text-align: center; margin-bottom: 4px; }
-    .event-label { text-align: center; color: #555; margin-bottom: 16px; font-size: 14px; }
+    .event-label { text-align: center; color: #555; margin-bottom: 4px; font-size: 14px; }
+    .checkin-counter { text-align: center; color: #2f855a; font-weight: bold; font-size: 15px; margin-bottom: 16px; }
     select, input[type=text] {
       width: 100%; padding: 12px; font-size: 16px; margin-bottom: 12px;
       border: 1px solid #ccc; border-radius: 8px;
@@ -76,6 +77,7 @@
   <div id="scanScreen" class="hidden">
     <h1>Check-In</h1>
     <div class="event-label" id="currentEventLabel"></div>
+    <div class="checkin-counter" id="mainCheckinCounter"></div>
 
     <div id="resultBanner" class="result-banner"></div>
 
@@ -113,7 +115,7 @@
   // Paste your deployed Apps Script web app URL here (Deploy > Manage
   // deployments in the Apps Script editor). It looks like:
   // https://script.google.com/macros/s/AKfycb.../exec
-  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz143iscEvEqhp6f7WothdgEWG7R9zoCeKly9GYyhT5MNp5xyUzEe3ylGhNxNRUY_pV/exec';
+  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbybpZ8Wj6kIyucTI7DgHObE6jYOpJ-OQk389-H4E-i1m0u4UmI0VdbAcWA1-t3xfMdj/exec';
   // ============================================
 
   let currentEventId = null;
@@ -192,6 +194,17 @@
     document.getElementById('setupScreen').classList.add('hidden');
     document.getElementById('scanScreen').classList.remove('hidden');
     document.getElementById('reader').innerHTML = '<p class="reader-placeholder">Camera is off - tap "Tap to Scan" below</p>';
+    refreshCheckinCount();
+  }
+
+  function refreshCheckinCount() {
+    callBackend({ action: 'checkinCount', eventId: currentEventId })
+      .then(res => {
+        if (res.success) {
+          document.getElementById('mainCheckinCounter').textContent = res.count + ' checked in';
+        }
+      })
+      .catch(() => {}); // non-critical - just skip updating the counter if this fails
   }
 
   function switchEvent() {
@@ -276,6 +289,7 @@
     if (res.status === 'success') {
       banner.className = 'result-banner result-success';
       banner.innerHTML = '&#10003; CHECKED IN' + (res.memberName ? '<div class="sub-name">' + res.memberName + '</div>' : '');
+      refreshCheckinCount();
     } else {
       banner.className = 'result-banner result-fail';
       banner.innerHTML = '&#10007; ' + (res.message || 'Error').toUpperCase() + (res.memberName ? '<div class="sub-name">' + res.memberName + '</div>' : '');
@@ -315,19 +329,24 @@
     callBackend({ action: 'checkinList', eventId: currentEventId })
       .then(res => {
         if (!res.success) {
-          document.getElementById('checkinListSummary').textContent = res.error || 'Could not load check-in list.';
+          document.getElementById('checkinListSummary').textContent = '';
+          document.getElementById('checkinListItems').innerHTML =
+            '<p style="text-align:center;color:#c53030;">' + (res.error || 'Could not load check-in list.') + '</p>';
           return;
         }
         renderCheckinList(res.entries, res.successCount);
       })
       .catch(err => {
-        document.getElementById('checkinListSummary').textContent = 'Error loading list: ' + err;
+        document.getElementById('checkinListSummary').textContent = '';
+        document.getElementById('checkinListItems').innerHTML =
+          '<p style="text-align:center;color:#c53030;">Error loading list: ' + err + '</p>';
       });
   }
 
   function renderCheckinList(entries, successCount) {
     document.getElementById('checkinListSummary').textContent =
       successCount + ' checked in (' + entries.length + ' total scan attempt' + (entries.length === 1 ? '' : 's') + ')';
+    document.getElementById('mainCheckinCounter').textContent = successCount + ' checked in';
 
     const container = document.getElementById('checkinListItems');
     container.innerHTML = '';
