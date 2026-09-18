@@ -40,6 +40,16 @@
       padding: 12px; background: white; border-radius: 8px; margin-bottom: 6px;
       border: 1px solid #ddd; cursor: pointer;
     }
+    .checkin-item {
+      padding: 10px 12px; background: white; border-radius: 8px; margin-bottom: 6px;
+      border: 1px solid #ddd; border-left-width: 4px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .checkin-item.success { border-left-color: #2f855a; }
+    .checkin-item.fail { border-left-color: #c53030; color: #999; }
+    .checkin-time { color: #888; font-size: 13px; white-space: nowrap; margin-left: 10px; }
+    #checkinListSummary { text-align: center; color: #555; font-size: 14px; margin: 8px 0; }
+    #checkinListItems { max-height: 320px; overflow-y: auto; margin-bottom: 10px; }
     .screen { max-width: 480px; margin: 0 auto; }
     .config-warning {
       background: #fdecea; border: 1px solid #f5c6cb; color: #611a15;
@@ -80,11 +90,18 @@
 
     <button class="btn-secondary" onclick="toggleManualEntry()">Enter ID Manually</button>
     <div id="manualBox" class="hidden">
-      <input type="text" id="manualIdInput" placeholder="Member ID (e.g. M0001)" onkeydown="if(event.key==='Enter') submitManualId()">
+      <input type="text" id="manualIdInput" placeholder="Member ID (e.g. 48213)" onkeydown="if(event.key==='Enter') submitManualId()">
       <button class="btn-primary" onclick="submitManualId()">Check In</button>
     </div>
 
     <button class="btn-secondary" id="syncBtn" onclick="checkForNewPurchases()">Check for New Purchases</button>
+
+    <button class="btn-secondary" onclick="toggleCheckinList()">View Check-In List</button>
+    <div id="checkinListBox" class="hidden">
+      <p id="checkinListSummary"></p>
+      <div id="checkinListItems"></div>
+      <button class="btn-secondary" onclick="loadCheckinList()">Refresh List</button>
+    </div>
 
     <button class="btn-secondary" onclick="switchEvent()">Switch Event</button>
   </div>
@@ -179,6 +196,7 @@
 
   function switchEvent() {
     stopScanner();
+    document.getElementById('checkinListBox').classList.add('hidden');
     document.getElementById('scanScreen').classList.add('hidden');
     document.getElementById('setupScreen').classList.remove('hidden');
   }
@@ -282,6 +300,49 @@
     if (!id) return;
     input.value = '';
     doCheckIn(id);
+  }
+
+  function toggleCheckinList() {
+    const box = document.getElementById('checkinListBox');
+    const wasHidden = box.classList.contains('hidden');
+    box.classList.toggle('hidden');
+    if (wasHidden) loadCheckinList();
+  }
+
+  function loadCheckinList() {
+    document.getElementById('checkinListSummary').textContent = 'Loading...';
+    document.getElementById('checkinListItems').innerHTML = '';
+    callBackend({ action: 'checkinList', eventId: currentEventId })
+      .then(res => {
+        if (!res.success) {
+          document.getElementById('checkinListSummary').textContent = res.error || 'Could not load check-in list.';
+          return;
+        }
+        renderCheckinList(res.entries, res.successCount);
+      })
+      .catch(err => {
+        document.getElementById('checkinListSummary').textContent = 'Error loading list: ' + err;
+      });
+  }
+
+  function renderCheckinList(entries, successCount) {
+    document.getElementById('checkinListSummary').textContent =
+      successCount + ' checked in (' + entries.length + ' total scan attempt' + (entries.length === 1 ? '' : 's') + ')';
+
+    const container = document.getElementById('checkinListItems');
+    container.innerHTML = '';
+
+    if (entries.length === 0) {
+      container.innerHTML = '<p style="text-align:center;color:#999;">No check-ins yet for this event.</p>';
+      return;
+    }
+
+    entries.forEach(entry => {
+      const div = document.createElement('div');
+      div.className = 'checkin-item ' + (entry.result === 'Success' ? 'success' : 'fail');
+      div.innerHTML = '<span>' + entry.memberName + '</span><span class="checkin-time">' + entry.time + '</span>';
+      container.appendChild(div);
+    });
   }
 
   function checkForNewPurchases() {
